@@ -36,7 +36,7 @@ from ..whisper.audio2feature import Audio2Feature
 import tqdm
 import soundfile as sf
 
-from superres_op import apply_superres
+from latentsync.pipelines.superres_op import apply_superres
 
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
