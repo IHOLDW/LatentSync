@@ -59,12 +59,12 @@ class ImageProcessor:
 
             if device != "cpu":
                 self.fa = face_alignment.FaceAlignment(
-                    face_alignment.LandmarksType.TWO_D, flip_input=False, device=device
+                    face_alignment.LandmarksType.TWO_D, flip_input=False, device="cpu"
                 )
                 self.face_mesh = None
             else:
-                # self.face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=True)  # Process single image
-                self.face_mesh = None
+                self.face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=True)  # Process single image
+                # self.face_mesh = None
                 self.fa = None
 
     def detect_facial_landmarks(self, image: np.ndarray):

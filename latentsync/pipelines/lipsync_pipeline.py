@@ -36,6 +36,8 @@ from ..whisper.audio2feature import Audio2Feature
 import tqdm
 import soundfile as sf
 
+from superres_op import apply_superres
+
 logger = logging.get_logger(__name__)  # pylint: disable=invalid-name
 
 
@@ -44,6 +46,8 @@ class LipsyncPipeline(DiffusionPipeline):
 
     def __init__(
         self,
+        device,
+        superres,
         vae: AutoencoderKL,
         audio_encoder: Audio2Feature,
         unet: UNet3DConditionModel,
@@ -116,6 +120,9 @@ class LipsyncPipeline(DiffusionPipeline):
         self.vae_scale_factor = 2 ** (len(self.vae.config.block_out_channels) - 1)
 
         self.set_progress_bar_config(desc="Steps")
+        
+        self.superres = superres
+        self.device = device
 
     def enable_vae_slicing(self):
         self.vae.enable_slicing()
@@ -129,7 +136,7 @@ class LipsyncPipeline(DiffusionPipeline):
         else:
             raise ImportError("Please install accelerate via `pip install accelerate`")
 
-        device = torch.device(f"cuda:{gpu_id}")
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         for cpu_offloaded_model in [self.unet, self.text_encoder, self.vae]:
             if cpu_offloaded_model is not None:
@@ -274,8 +281,20 @@ class LipsyncPipeline(DiffusionPipeline):
 
         faces = torch.stack(faces)
         return faces, video_frames, boxes, affine_matrices
+    
+    def supperres(self, face, targe_size: tuple, method: str, device):
+        h, w = face.shape[0], face.shape[1]
+        t_h, t_w = targe_size
+        if h < t_h or w < t_w:
+            scale = max(t_h / h, t_w / w)
+            print(f"applying superres with {method} and scale_factor of {scale}")
+            
+            if method.lower() == "codeformer":
+                return apply_superres(face, scale, device, method, targe_size)
+            elif method.lower() == "gfpgan":
+                return apply_superres(face, scale, device, method, targe_size)
 
-    def restore_video(self, faces, video_frames, boxes, affine_matrices):
+    def restore_video(self, faces, video_frames, boxes, affine_matrices, method, device, superres_method: Optional[str] = None):
         video_frames = video_frames[: faces.shape[0]]
         out_frames = []
         print(f"Restoring {len(faces)} faces...")
@@ -287,6 +306,9 @@ class LipsyncPipeline(DiffusionPipeline):
             face = rearrange(face, "c h w -> h w c")
             face = (face / 2 + 0.5).clamp(0, 1)
             face = (face * 255).to(torch.uint8).cpu().numpy()
+            
+            if superres_method is not None:
+                face = self.supperres(face, method, device, arge_size = (height, width))
             # face = cv2.resize(face, (width, height), interpolation=cv2.INTER_LANCZOS4)
             out_frame = self.image_processor.restorer.restore_img(video_frames[index], face, affine_matrices[index])
             out_frames.append(out_frame)
@@ -322,7 +344,7 @@ class LipsyncPipeline(DiffusionPipeline):
         # 0. Define call parameters
         batch_size = 1
         device = self._execution_device
-        self.image_processor = ImageProcessor(height, mask=mask, device="cuda")
+        self.image_processor = ImageProcessor(height, mask=mask, device="cpu")
         self.set_progress_bar_config(desc=f"Sample frames: {num_frames}")
 
         faces, original_video_frames, boxes, affine_matrices = self.affine_transform_video(video_path)
@@ -448,8 +470,9 @@ class LipsyncPipeline(DiffusionPipeline):
             synced_video_frames.append(decoded_latents)
             # masked_video_frames.append(masked_pixel_values)
 
+        device = kwargs.get("device", None)
         synced_video_frames = self.restore_video(
-            torch.cat(synced_video_frames), original_video_frames, boxes, affine_matrices
+            torch.cat(synced_video_frames), original_video_frames, boxes, affine_matrices, superres_method = self.superres, device = self.device
         )
         # masked_video_frames = self.restore_video(
         #     torch.cat(masked_video_frames), original_video_frames, boxes, affine_matrices
