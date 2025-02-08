@@ -2,7 +2,7 @@
 
 Welcome to the repository! This project provides a setup for running inference with support for super-resolution and device selection (CPU or GPU). Below are the instructions to set up and run the inference.
 
-# I was unable to test this as i dont have a gpu and running inference on cpu was taking quite a while
+### I was unable to test this as i dont have a gpu and running inference on cpu was taking quite a while
 
 ## Setup Instructions
 
